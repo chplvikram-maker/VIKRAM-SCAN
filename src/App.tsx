@@ -105,11 +105,23 @@ export default function App() {
       if (data.success && data.product) {
         setScannedProduct(data.product);
       } else {
-        toast.error(data.error || 'Product Not Found', {
-          icon: <AlertCircle className="text-red-500" />,
-          duration: 3000
-        });
-        setIsScanning(true); 
+        // If product not found, allow quick entry
+        const quickAdd = confirm(`${data.error || 'Product Not Found'}\n\nWould you like to log this as a New Product?`);
+        if (quickAdd) {
+          const name = prompt('Enter Product Name:');
+          if (name) {
+            setScannedProduct({
+              barcode: barcode,
+              name: name,
+              category: 'NEW / UNKNOWN',
+              uom: 'PCS'
+            });
+          } else {
+            setIsScanning(true);
+          }
+        } else {
+          setIsScanning(true);
+        }
       }
     } catch (e) {
       console.error('Scan fetch failed:', e);

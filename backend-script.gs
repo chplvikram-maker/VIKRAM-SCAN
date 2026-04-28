@@ -35,25 +35,40 @@ function doPost(e) {
 }
 
 function getProduct(barcode) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('MASTER');
+  let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('MASTER');
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Master');
+  }
+  if (!sheet) {
+    const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+    if (sheets.length > 0) sheet = sheets[0]; // Fallback to first sheet if MASTER is missing
+  }
+  
+  if (!sheet) return response({ success: false, error: 'No sheets found in spreadsheet' });
+  
   const values = sheet.getDataRange().getValues();
+  const searchBarcode = String(barcode).trim().toLowerCase();
   
   // Skip header row
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]) === String(barcode)) {
+    const cellValue = values[i][0];
+    if (cellValue === undefined || cellValue === null || cellValue === '') continue;
+    
+    const rowBarcode = String(cellValue).trim().toLowerCase();
+    if (rowBarcode === searchBarcode) {
       return response({
         success: true,
         product: {
           barcode: values[i][0],
-          name: values[i][1],
-          category: values[i][2],
-          uom: values[i][3]
+          name: values[i][1] || 'Unnamed Product',
+          category: values[i][2] || 'Default',
+          uom: values[i][3] || 'PCS'
         }
       });
     }
   }
   
-  return response({ success: false, error: 'Product Not Found' });
+  return response({ success: false, error: `Barcode ${barcode} not found in sheet "${sheet.getName()}"` });
 }
 
 function submitEntry(data) {
