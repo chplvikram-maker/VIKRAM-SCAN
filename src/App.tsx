@@ -21,11 +21,18 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
 
+  const [apiUrl, setApiUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('VITE_SHEETS_API_URL');
+    if (saved) return saved;
+    const envValue = import.meta.env.VITE_SHEETS_API_URL;
+    return (envValue && !envValue.includes('...')) ? envValue.trim() : '';
+  });
+
   const fetchHistory = useCallback(async (username: string) => {
-    if (!API_URL || API_URL.includes('...')) return;
+    if (!apiUrl) return;
     
     try {
-      const res = await fetch(`${API_URL}?action=get_history&username=${encodeURIComponent(username)}`, {
+      const res = await fetch(`${apiUrl}?action=get_history&username=${encodeURIComponent(username)}`, {
         mode: 'cors',
         cache: 'no-cache'
       });
@@ -45,10 +52,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (user && API_URL && !API_URL.includes('...')) {
+    if (user && apiUrl) {
       fetchHistory(user);
     }
-  }, [user, fetchHistory]);
+  }, [user, apiUrl, fetchHistory]);
 
   const handleLogin = (username: string) => {
     setUser(username);
@@ -63,7 +70,7 @@ export default function App() {
   };
 
   const handleScan = async (barcode: string) => {
-    if (!API_URL || API_URL.includes('...')) {
+    if (!apiUrl) {
       toast.error('Sheets API URL not configured!');
       return;
     }
@@ -74,7 +81,7 @@ export default function App() {
     triggerVibrate();
 
     try {
-      const res = await fetch(`${API_URL}?action=get_product&barcode=${encodeURIComponent(barcode)}`, {
+      const res = await fetch(`${apiUrl}?action=get_product&barcode=${encodeURIComponent(barcode)}`, {
         mode: 'cors'
       });
       
@@ -101,11 +108,11 @@ export default function App() {
   };
 
   const handleSubmitEntry = async (quantity: number) => {
-    if (!scannedProduct || !user || !API_URL) return;
+    if (!scannedProduct || !user || !apiUrl) return;
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' }, // Bypass CORS preflight for simplified endpoint
         body: JSON.stringify({
@@ -135,7 +142,7 @@ export default function App() {
   };
 
   const handleEditLast = async () => {
-    if (history.length === 0 || !user || !API_URL) return;
+    if (history.length === 0 || !user || !apiUrl) return;
     
     const last = history[0];
     const newQty = prompt(`Update quantity for ${last.name}?`, String(last.quantity));
@@ -150,7 +157,7 @@ export default function App() {
 
     toast.loading('Updating...', { id: 'edit-entry' });
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
@@ -174,7 +181,7 @@ export default function App() {
   if (!user) return <Login onLogin={handleLogin} />;
 
   // Configuration Guard UI
-  if (!API_URL || API_URL.includes('...')) {
+  if (!apiUrl) {
     return (
       <div className="min-h-screen bg-natural-bg flex items-center justify-center p-6 text-center">
         <div className="max-w-sm space-y-6">
@@ -183,24 +190,51 @@ export default function App() {
           </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-black text-natural-text">Configuration Required</h1>
-            <p className="text-sm text-natural-muted font-medium">
-              To connect this app to your Google Sheet, you must set the <code className="bg-white px-1">VITE_SHEETS_API_URL</code> environment variable.
+            <p className="text-sm text-natural-muted font-medium px-4">
+              Connect this app to your Google Sheet to start scanning.
             </p>
           </div>
-          <div className="p-4 bg-white rounded-2xl border border-natural-border text-left text-[11px] space-y-3">
-            <p className="font-bold uppercase tracking-wider text-natural-accent">Next Steps:</p>
-            <ol className="list-decimal list-inside space-y-1 text-natural-muted font-medium">
-              <li>Deploy the <code className="bg-natural-bg px-1">backend-script.gs</code> in Google Apps Script.</li>
-              <li>Copy the <b>Web App URL</b>.</li>
-              <li>Add it to <b>Secrets</b> as <code className="bg-natural-bg px-1">VITE_SHEETS_API_URL</code>.</li>
-            </ol>
+          
+          <div className="space-y-4">
+            <div className="text-left space-y-1 px-4">
+              <label className="text-[10px] font-black text-natural-muted uppercase tracking-widest ml-2">
+                Google Sheets Web App URL
+              </label>
+              <input 
+                type="text" 
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full p-4 bg-white rounded-2xl border-2 border-natural-border focus:border-natural-accent outline-none font-medium text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const value = (e.target as HTMLInputElement).value.trim();
+                    if (value.startsWith('https://script.google.com')) {
+                      localStorage.setItem('VITE_SHEETS_API_URL', value);
+                      setApiUrl(value);
+                      toast.success('API URL saved locally!');
+                    } else {
+                      toast.error('Please enter a valid Google Script URL');
+                    }
+                  }
+                }}
+              />
+            </div>
+
+            <div className="p-4 bg-white/50 rounded-2xl border border-natural-border/50 text-left text-[11px] space-y-3">
+              <p className="font-bold uppercase tracking-wider text-natural-accent">Setup Help:</p>
+              <ol className="list-decimal list-inside space-y-1 text-natural-muted font-medium">
+                <li>Deploy the script in Google Apps Script as <b>"Web App"</b>.</li>
+                <li>Set access to <b>"Anyone"</b> (Crucial).</li>
+                <li>Paste the URL above and press <b>Enter</b>.</li>
+              </ol>
+            </div>
+            
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-natural-accent text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl shadow-natural-accent/20"
+            >
+              Check Connection
+            </button>
           </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full py-4 bg-natural-accent text-white rounded-2xl font-bold uppercase tracking-widest text-sm"
-          >
-            I've set it up, Refresh
-          </button>
         </div>
       </div>
     );
