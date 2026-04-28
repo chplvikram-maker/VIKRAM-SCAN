@@ -28,6 +28,19 @@ export default function App() {
     return (envValue && !envValue.includes('...')) ? envValue.trim() : '';
   });
 
+  const [configInput, setConfigInput] = useState('');
+
+  const handleSaveApiUrl = (url: string) => {
+    const cleanUrl = url.trim();
+    if (cleanUrl.startsWith('https://script.google.com')) {
+      localStorage.setItem('VITE_SHEETS_API_URL', cleanUrl);
+      setApiUrl(cleanUrl);
+      toast.success('API URL saved successfully!');
+    } else {
+      toast.error('Please enter a valid Google Script URL');
+    }
+  };
+
   const fetchHistory = useCallback(async (username: string) => {
     if (!apiUrl) return;
     
@@ -202,18 +215,13 @@ export default function App() {
               </label>
               <input 
                 type="text" 
+                value={configInput}
+                onChange={(e) => setConfigInput(e.target.value)}
                 placeholder="https://script.google.com/macros/s/.../exec"
                 className="w-full p-4 bg-white rounded-2xl border-2 border-natural-border focus:border-natural-accent outline-none font-medium text-xs"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    const value = (e.target as HTMLInputElement).value.trim();
-                    if (value.startsWith('https://script.google.com')) {
-                      localStorage.setItem('VITE_SHEETS_API_URL', value);
-                      setApiUrl(value);
-                      toast.success('API URL saved locally!');
-                    } else {
-                      toast.error('Please enter a valid Google Script URL');
-                    }
+                    handleSaveApiUrl(configInput);
                   }
                 }}
               />
@@ -224,12 +232,12 @@ export default function App() {
               <ol className="list-decimal list-inside space-y-1 text-natural-muted font-medium">
                 <li>Deploy the script in Google Apps Script as <b>"Web App"</b>.</li>
                 <li>Set access to <b>"Anyone"</b> (Crucial).</li>
-                <li>Paste the URL above and press <b>Enter</b>.</li>
+                <li>Paste the URL above and click <b>Check Connection</b>.</li>
               </ol>
             </div>
             
             <button 
-              onClick={() => window.location.reload()}
+              onClick={() => handleSaveApiUrl(configInput)}
               className="w-full py-4 bg-natural-accent text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl shadow-natural-accent/20"
             >
               Check Connection
