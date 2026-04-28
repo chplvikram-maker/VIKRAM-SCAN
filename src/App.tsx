@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-import { Scan, LogOut, PackageSearch, AlertCircle, RefreshCcw, Wifi, WifiOff, CloudOff, CloudUpload, ArrowRight, Check } from 'lucide-react';
+import { Scan, LogOut, PackageSearch, AlertCircle, RefreshCcw, Wifi, WifiOff, CloudOff, CloudUpload, ArrowRight, Check, Trash2, RotateCw, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 
@@ -144,53 +144,125 @@ export default function App() {
   }, [pendingSyncs]);
 
   const syncOfflineData = useCallback(async () => {
+    // Only proceed if we're online and have items to sync, and not already syncing
     if (!isOnline || pendingSyncs.length === 0 || !apiUrl || isSyncing) return;
 
     setIsSyncing(true);
     setSyncProgress(0);
-    const totalToSync = pendingSyncs.length;
-    const toastId = toast.loading(`Starting sync of ${totalToSync} entries...`);
+    
+    // Only attempt items that haven't reached max retries and aren't already syncing
+    const itemsToSync = pendingSyncs.filter(s => (s.attempts || 0) < 5 && s.status !== 'syncing');
+    if (itemsToSync.length === 0) {
+      setIsSyncing(false);
+      return;
+    }
+
+    const toastId = toast.loading(`Syncing ${itemsToSync.length} entries...`);
     
     let successCount = 0;
-    const remainingSyncs = [...pendingSyncs];
-    const failedSyncs: PendingSync[] = [];
+    let failCount = 0;
 
-    for (let i = 0; i < remainingSyncs.length; i++) {
-      const sync = remainingSyncs[i];
+    // We'll update pendingSyncs iteratively to show progress
+    for (let i = 0; i < itemsToSync.length; i++) {
+      const syncItem = itemsToSync[i];
+      
+      // Update status to syncing
+      setPendingSyncs(prev => prev.map(s => s.id === syncItem.id ? { ...s, status: 'syncing' } : s));
+      
       try {
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
-            action: sync.action,
-            ...sync.data
+            action: syncItem.action,
+            ...syncItem.data
           })
         });
-        const data = await res.json();
+
+        const data: ApiResponse<any> = await res.json();
+        
         if (data.success) {
+          // Remove successful item
+          setPendingSyncs(prev => prev.filter(s => s.id !== syncItem.id));
           successCount++;
         } else {
-          failedSyncs.push(sync);
+          // Mark as failed with error
+          setPendingSyncs(prev => prev.map(s => 
+            s.id === syncItem.id 
+              ? { ...s, status: 'failed', lastError: data.error || 'API Error', attempts: (s.attempts || 0) + 1 } 
+              : s
+          ));
+          failCount++;
         }
       } catch (e) {
-        failedSyncs.push(sync);
+        console.error(`Sync failed for ${syncItem.id}:`, e);
+        // Mark as failed with network error
+        setPendingSyncs(prev => prev.map(s => 
+          s.id === syncItem.id 
+            ? { ...s, status: 'failed', lastError: e instanceof Error ? e.message : 'Network Error', attempts: (s.attempts || 0) + 1 } 
+            : s
+        ));
+        failCount++;
       }
-      setSyncProgress(i + 1);
+      
+      setSyncProgress(((i + 1) / itemsToSync.length) * 100);
     }
 
-    setPendingSyncs(failedSyncs);
     setIsSyncing(false);
     setSyncProgress(0);
 
     if (successCount > 0) {
       toast.success(`Successfully synced ${successCount} entries!`, { id: toastId });
       if (user) fetchHistory(user);
-    } else if (failedSyncs.length > 0) {
-      toast.error('Sync process encountered errors. Some items remains in queue.', { id: toastId });
+    } else if (failCount > 0) {
+      toast.error(`${failCount} items failed to sync. Review in Sync Queue.`, { id: toastId });
     } else {
       toast.dismiss(toastId);
     }
   }, [isOnline, pendingSyncs, apiUrl, isSyncing, user, fetchHistory]);
+
+  const removePendingSync = (id: string) => {
+    setPendingSyncs(prev => prev.filter(s => s.id !== id));
+    toast.success('Entry removed from queue');
+  };
+
+  const retrySyncItem = async (id: string) => {
+    if (!isOnline || !apiUrl) {
+      toast.error('Connect to internet to retry sync');
+      return;
+    }
+
+    const item = pendingSyncs.find(s => s.id === id);
+    if (!item) return;
+
+    const toastId = toast.loading('Retrying...');
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: item.action,
+          ...item.data
+        })
+      });
+
+      const data: ApiResponse<any> = await res.json();
+      if (data.success) {
+        setPendingSyncs(prev => prev.filter(s => s.id !== id));
+        toast.success('Synced successfully!', { id: toastId });
+        if (user) fetchHistory(user);
+      } else {
+        setPendingSyncs(prev => prev.map(s => 
+          s.id === id 
+            ? { ...s, lastError: data.error || 'Server rejected', attempts: (s.attempts || 0) + 1, status: 'failed' } 
+            : s
+        ));
+        toast.error(`Retry failed: ${data.error}`, { id: toastId });
+      }
+    } catch (e) {
+      toast.error('Retry failed: Network error', { id: toastId });
+    }
+  };
 
   // Auto-sync when coming back online
   useEffect(() => {
@@ -326,7 +398,9 @@ export default function App() {
         id: crypto.randomUUID(),
         action: 'submit_entry',
         data: entryData,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        attempts: 0
       };
       setPendingSyncs(prev => [...prev, newSync]);
       toast.success('Queued offline.', { icon: '💾' });
@@ -372,7 +446,9 @@ export default function App() {
         id: crypto.randomUUID(),
         action: 'submit_entry',
         data: entryData,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        attempts: 0
       };
       setPendingSyncs(prev => [...prev, newSync]);
       toast.success('Local save fallback.', { id: toastId });
@@ -410,7 +486,9 @@ export default function App() {
         id: crypto.randomUUID(),
         action: 'update_last_entry',
         data: updateData,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        attempts: 0
       };
       setPendingSyncs(prev => [...prev, newSync]);
       toast.success('Edit queued offline!', { id: toastId });
@@ -443,7 +521,9 @@ export default function App() {
         id: crypto.randomUUID(),
         action: 'update_last_entry',
         data: updateData,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        attempts: 0
       };
       setPendingSyncs(prev => [...prev, newSync]);
       toast.success('Network issue. Edit saved locally.', { id: toastId });
@@ -640,7 +720,7 @@ export default function App() {
       </header>
 
       <main className="max-w-md mx-auto p-6 space-y-8">
-        {/* Offline Queue Status */}
+        {/* Enhanced Offline Sync Queue */}
         {pendingSyncs.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
@@ -658,44 +738,114 @@ export default function App() {
                 </div>
                 <div>
                   <div className="text-sm font-bold text-amber-900 leading-tight">
-                    {isSyncing ? 'Synchronizing Data' : 'Pending Synchronization'}
+                    {isSyncing ? 'Synchronizing Cloud' : 'Sync Queue Active'}
                   </div>
-                  <div className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">
-                    {isSyncing 
-                      ? `Processing ${syncProgress} of ${pendingSyncs.length} entries` 
-                      : `${pendingSyncs.length} entries awaiting cloud sync`}
+                  <div className="text-[10px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-2">
+                    {pendingSyncs.length} entries pending
+                    {pendingSyncs.some(s => s.status === 'failed') && (
+                      <span className="flex items-center gap-1 text-red-600 font-black">
+                        <AlertCircle className="w-2.5 h-2.5" />
+                        Errors detected
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              {!isSyncing && (
-                <button
-                  onClick={syncOfflineData}
-                  disabled={!isOnline}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:bg-amber-400 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2"
-                >
-                  <CloudUpload className="w-3 h-3" />
-                  Sync Now
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isSyncing && (
+                  <button
+                    onClick={syncOfflineData}
+                    disabled={!isOnline || pendingSyncs.every(s => (s.attempts || 0) >= 5)}
+                    className="px-4 py-2 bg-natural-text hover:bg-black disabled:opacity-30 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-black/10"
+                  >
+                    <RefreshCcw className={cn("w-3 h-3", isOnline && "animate-pulse")} />
+                    Retry Cloud Sync
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Sync Progress Bar */}
             {isSyncing && (
-              <div className="bg-amber-50/50 px-4 pb-4">
-                <div className="h-2 w-full bg-amber-100 rounded-full overflow-hidden">
+              <div className="px-4 pb-4 bg-amber-50">
+                <div className="h-1.5 w-full bg-amber-100 rounded-full overflow-hidden">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(syncProgress / pendingSyncs.length) * 100}%` }}
-                    className="h-full bg-amber-500"
+                    animate={{ width: `${syncProgress}%` }}
+                    className="h-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
                   />
                 </div>
-                <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest mt-2 text-right">
-                  Do not close application
-                </p>
               </div>
             )}
-            {!isOnline && !isSyncing && (
-              <div className="bg-red-50 border-t border-red-100 p-2 text-center">
-                <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest flex items-center justify-center gap-2">
-                  <WifiOff className="w-3 h-3" /> Network connection required to sync
+
+            {/* Expandable Management Area */}
+            <div className="border-t border-natural-border/50 max-h-60 overflow-y-auto bg-natural-bg/30">
+              <div className="divide-y divide-natural-border/30">
+                {pendingSyncs.map((sync) => (
+                  <div key={sync.id} className="p-3 bg-white/50 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-natural-bg rounded-lg flex items-center justify-center border border-natural-border/50">
+                          {sync.action === 'submit_entry' ? (
+                            <CloudUpload className="w-4 h-4 text-natural-muted" />
+                          ) : (
+                            <Edit2 className="w-4 h-4 text-natural-muted" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-black text-natural-text leading-none mb-1">
+                            {sync.data.name}
+                          </div>
+                          <div className="text-[9px] text-natural-muted font-bold uppercase tracking-wider flex items-center gap-2">
+                            {sync.data.quantity} {sync.data.uom} • {new Date(sync.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5">
+                        {sync.status === 'syncing' ? (
+                          <div className="px-2 py-1 bg-amber-100 text-amber-700 text-[8px] font-black uppercase rounded-lg animate-pulse">Syncing...</div>
+                        ) : (
+                          <>
+                            <button 
+                              onClick={() => retrySyncItem(sync.id)}
+                              disabled={!isOnline || isSyncing}
+                              className="p-1.5 hover:bg-natural-bg rounded-lg text-natural-muted hover:text-emerald-600 transition-colors"
+                              title="Retry entry"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => removePendingSync(sync.id)}
+                              disabled={isSyncing}
+                              className="p-1.5 hover:bg-red-50 rounded-lg text-natural-muted hover:text-red-500 transition-colors"
+                              title="Discard entry"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {sync.status === 'failed' && (
+                      <div className="px-2 py-1.5 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-red-700 font-bold leading-tight uppercase tracking-tight">Sync Error: {sync.lastError}</p>
+                          <p className="text-[8px] text-red-500 font-bold uppercase tracking-widest mt-0.5">Attempt {sync.attempts}/5</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {!isOnline && (
+              <div className="bg-red-600 p-2 text-center">
+                <p className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-center gap-2">
+                  <WifiOff className="w-3 h-3" /> NO INTERNET DETECTED • DATA PROTECTED IN QUEUE
                 </p>
               </div>
             )}

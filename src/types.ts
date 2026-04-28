@@ -27,6 +27,9 @@ export interface PendingSync {
     uom: string;
   };
   timestamp: string;
+  attempts?: number;
+  lastError?: string;
+  status?: 'pending' | 'syncing' | 'failed';
 }
 
 export interface ApiResponse<T> {
