@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { HistoryEntry } from '../types';
 import { Clock, Edit2, Search, ArrowUpDown, Calendar, Hash } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 interface HistoryListProps {
@@ -16,6 +16,7 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filteredAndSortedEntries = useMemo(() => {
     const filtered = entries.filter(entry => 
@@ -75,31 +76,56 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2 px-1">
-              <button
-                onClick={() => toggleSort('date')}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all",
-                  sortField === 'date' 
-                    ? "bg-natural-accent text-white border-natural-accent" 
-                    : "bg-white text-natural-muted border-natural-border hover:bg-natural-bg"
-                )}
-              >
-                <Calendar className="w-3 h-3" />
-                Date {sortField === 'date' && (sortOrder === 'desc' ? '↓' : '↑')}
-              </button>
-              <button
-                onClick={() => toggleSort('quantity')}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all",
-                  sortField === 'quantity' 
-                    ? "bg-natural-accent text-white border-natural-accent" 
-                    : "bg-white text-natural-muted border-natural-border hover:bg-natural-bg"
-                )}
-              >
-                <Hash className="w-3 h-3" />
-                Qty {sortField === 'quantity' && (sortOrder === 'desc' ? '↓' : '↑')}
-              </button>
+            <div className="flex flex-col gap-2 px-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] font-black text-natural-muted uppercase tracking-[0.2em] ml-1">Sort Results By</span>
+                <button 
+                  onClick={() => {
+                    setSortField('date');
+                    setSortOrder('desc');
+                    setSearchQuery('');
+                  }}
+                  className="text-[8px] font-black text-natural-accent uppercase tracking-widest hover:underline"
+                >
+                  Reset All
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleSort('date')}
+                  className={cn(
+                    "flex-1 flex items-center justify-between gap-2 py-2.5 px-4 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all shadow-sm",
+                    sortField === 'date' 
+                      ? "bg-natural-text text-white border-natural-text" 
+                      : "bg-white text-natural-muted border-natural-border hover:bg-natural-bg"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-3 h-3" />
+                    <span>Date</span>
+                  </div>
+                  {sortField === 'date' ? (
+                    sortOrder === 'desc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />
+                  ) : <ArrowUpDown className="w-3 h-3 opacity-20" />}
+                </button>
+                <button
+                  onClick={() => toggleSort('quantity')}
+                  className={cn(
+                    "flex-1 flex items-center justify-between gap-2 py-2.5 px-4 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all shadow-sm",
+                    sortField === 'quantity' 
+                      ? "bg-natural-text text-white border-natural-text" 
+                      : "bg-white text-natural-muted border-natural-border hover:bg-natural-bg"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Hash className="w-3 h-3" />
+                    <span>Quantity</span>
+                  </div>
+                  {sortField === 'quantity' ? (
+                    sortOrder === 'desc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />
+                  ) : <ArrowUpDown className="w-3 h-3 opacity-20" />}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -116,50 +142,96 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
             <p className="text-[10px] font-black text-natural-muted uppercase tracking-widest">No matches found</p>
           </div>
         ) : (
-          filteredAndSortedEntries.map((entry, idx) => (
-            <motion.div
-              key={entry.date + idx}
-              layout
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className={cn(
-                "group relative flex items-center justify-between p-4 rounded-2xl border transition-all shadow-sm",
-                (idx === 0 && sortField === 'date' && sortOrder === 'desc')
-                  ? "bg-natural-screen border-natural-accent/30 ring-1 ring-natural-accent/5 shadow-md" 
-                  : "bg-white border-natural-border"
-              )}
-            >
-              {(idx === 0 && sortField === 'date' && sortOrder === 'desc') && (
-                <div className="absolute -top-2 left-6 px-2 py-0.5 bg-natural-accent text-white text-[8px] font-black uppercase tracking-widest rounded-full shadow-sm">
-                  Latest Action
-                </div>
-              )}
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <div className={cn(
-                  "w-2.5 h-2.5 rounded-full shrink-0 shadow-sm transition-opacity",
-                  (idx === 0 && sortField === 'date' && sortOrder === 'desc') ? "bg-natural-accent animate-pulse" : "bg-natural-accent opacity-30"
-                )} />
-                <div className="min-w-0">
-                  <div className={cn(
-                    "font-bold truncate tracking-tight transition-colors",
-                    (idx === 0 && sortField === 'date' && sortOrder === 'desc') ? "text-natural-accent" : "text-natural-text"
-                  )}>{entry.name}</div>
-                  <div className="text-[10px] text-natural-muted flex items-center gap-2 mt-0.5 font-black uppercase tracking-wider">
-                    <span>{entry.barcode}</span>
-                    <span className="text-natural-border">•</span>
-                    <span>{new Date(entry.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          filteredAndSortedEntries.map((entry, idx) => {
+            const isExpanded = expandedId === entry.date + idx;
+            return (
+              <motion.div
+                key={entry.date + idx}
+                layout
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                onClick={() => setExpandedId(isExpanded ? null : entry.date + idx)}
+                className={cn(
+                  "group relative flex flex-col p-4 rounded-2xl border transition-all shadow-sm cursor-pointer",
+                  (idx === 0 && sortField === 'date' && sortOrder === 'desc')
+                    ? "bg-natural-screen border-natural-accent/30 ring-1 ring-natural-accent/5 shadow-md" 
+                    : "bg-white border-natural-border",
+                  isExpanded && "ring-2 ring-natural-accent ring-offset-2"
+                )}
+              >
+                {(idx === 0 && sortField === 'date' && sortOrder === 'desc') && (
+                  <div className="absolute -top-2 left-6 px-2 py-0.5 bg-natural-accent text-white text-[8px] font-black uppercase tracking-widest rounded-full shadow-sm z-10">
+                    Latest Action
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className={cn(
+                      "w-2.5 h-2.5 rounded-full shrink-0 shadow-sm transition-opacity",
+                      (idx === 0 && sortField === 'date' && sortOrder === 'desc') ? "bg-natural-accent animate-pulse" : "bg-natural-accent opacity-30"
+                    )} />
+                    <div className="min-w-0">
+                      <div className={cn(
+                        "font-bold truncate tracking-tight transition-colors",
+                        (idx === 0 && sortField === 'date' && sortOrder === 'desc') ? "text-natural-accent" : "text-natural-text"
+                      )}>{entry.name}</div>
+                      <div className="text-[10px] text-natural-muted flex items-center gap-2 mt-0.5 font-black uppercase tracking-wider">
+                        <span>{entry.barcode}</span>
+                        <span className="text-natural-border">•</span>
+                        <span>{new Date(entry.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right ml-4">
+                    <div className="text-xl font-black text-natural-accent leading-none">
+                      {entry.quantity}
+                    </div>
+                    <div className="text-[9px] font-black text-natural-muted uppercase tracking-widest mt-0.5">{entry.uom}</div>
                   </div>
                 </div>
-              </div>
-              <div className="text-right ml-4">
-                <div className="text-xl font-black text-natural-accent leading-none">
-                  {entry.quantity}
-                </div>
-                <div className="text-[9px] font-black text-natural-muted uppercase tracking-widest mt-0.5">{entry.uom}</div>
-              </div>
-            </motion.div>
-          ))
+
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-4 pt-4 border-t border-natural-border/50 grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[8px] font-black text-natural-muted uppercase tracking-widest">Category</span>
+                          <p className="text-[11px] font-bold text-natural-text uppercase leading-tight">
+                            {entry.category || 'NO CATEGORY'}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] font-black text-natural-muted uppercase tracking-widest">Log Time</span>
+                          <p className="text-[11px] font-bold text-natural-text uppercase leading-tight">
+                            {new Date(entry.date).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] font-black text-natural-muted uppercase tracking-widest">Unit of Measure</span>
+                          <p className="text-[11px] font-bold text-natural-text uppercase leading-tight">
+                            {entry.uom}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] font-black text-natural-muted uppercase tracking-widest">Barcode ID</span>
+                          <p className="text-[11px] font-bold text-natural-text uppercase leading-tight font-mono">
+                            {entry.barcode}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })
         )}
       </div>
     </div>

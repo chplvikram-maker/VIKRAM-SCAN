@@ -17,64 +17,65 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-natural-bg">
-      <div className="w-full max-w-sm space-y-12 text-center">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="mx-auto w-24 h-24 bg-natural-accent rounded-[32px] flex items-center justify-center shadow-2xl shadow-natural-accent/20"
-        >
-          <Scan className="w-12 h-12 text-white" />
-        </motion.div>
+    <div className="min-h-screen bg-natural-bg flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Background Decorative Elements */}
+      <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-natural-accent opacity-5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-natural-accent opacity-5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="space-y-3">
-          <h1 className="text-5xl font-black text-natural-text tracking-tight">
-            VIKRAM<br /><span className="text-natural-accent opacity-80">SCAN</span>
-          </h1>
-          <p className="text-natural-muted font-bold uppercase tracking-[0.2em] text-[10px]">
-            System Access Terminal
-          </p>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm space-y-12 relative z-10"
+      >
+        <div className="space-y-4">
+          <div className="w-16 h-16 bg-natural-accent rounded-3xl flex items-center justify-center shadow-2xl shadow-natural-accent/30 rotate-3">
+            <Scan className="w-8 h-8 text-white -rotate-3" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-6xl font-black text-natural-text tracking-tighter leading-[0.9]">
+              VIKRAM<br /><span className="text-natural-accent opacity-80">SCAN</span>
+            </h1>
+            <p className="text-natural-muted font-bold uppercase tracking-[0.3em] text-[10px] ml-1">
+              System Access Terminal
+            </p>
+          </div>
         </div>
 
-        <motion.form 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          onSubmit={handleSubmit} 
-          className="space-y-6"
-        >
-          <div className="space-y-1 text-left">
-            <label className="text-[10px] font-black text-natural-muted uppercase tracking-widest ml-4">
-              Authorized Operator
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-natural-muted uppercase tracking-[0.2em] ml-4">
+              Operator Identity
             </label>
             <div className="relative group">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-natural-muted group-focus-within:text-natural-accent transition-colors" />
+              <User className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-natural-muted group-focus-within:text-natural-accent transition-colors" />
               <input
                 type="text"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter Full Name"
-                className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border-2 border-natural-border focus:border-natural-accent outline-none transition-all text-natural-text shadow-sm font-semibold"
+                placeholder="ENTER STAFF ID / NAME"
+                className="w-full pl-14 pr-6 py-5 bg-white rounded-[2rem] border-2 border-natural-border focus:border-natural-accent outline-none transition-all text-natural-text shadow-lg shadow-black/5 font-bold"
+                autoFocus
               />
             </div>
           </div>
-
           <button
             type="submit"
-            className="w-full py-5 bg-natural-accent hover:bg-natural-text text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-natural-accent/30 transition-all active:scale-[0.98] uppercase tracking-widest text-sm"
+            className="w-full bg-natural-text text-white p-5 rounded-[2rem] font-bold uppercase tracking-widest shadow-2xl shadow-black/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
           >
-            Authenticate
-            <ArrowRight className="w-5 h-5" />
+            Authenticate Session
+            <ArrowRight className="w-4 h-4" />
           </button>
-        </motion.form>
+        </form>
 
-        <div className="pt-8 border-t border-natural-border/50">
-          <p className="text-[10px] text-natural-muted uppercase tracking-[0.25em] font-black">
-            Master Data Sync Mode Active
-          </p>
+        <div className="flex items-center gap-6 px-4">
+          <div className="flex-1 h-px bg-natural-border" />
+          <div className="text-[9px] font-black text-natural-muted uppercase tracking-[0.3em] whitespace-nowrap">
+            Warehouse Ops v2.0
+          </div>
+          <div className="flex-1 h-px bg-natural-border" />
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
