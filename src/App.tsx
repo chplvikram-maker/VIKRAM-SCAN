@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-import { Scan, LogOut, PackageSearch, AlertCircle, RefreshCcw, Wifi, WifiOff, CloudOff, CloudUpload, ArrowRight } from 'lucide-react';
+import { Scan, LogOut, PackageSearch, AlertCircle, RefreshCcw, Wifi, WifiOff, CloudOff, CloudUpload, ArrowRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from './lib/utils';
 
 import Login from './components/Login';
 import Scanner from './components/Scanner';
@@ -82,6 +83,13 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
+  const [quickScanMode, setQuickScanMode] = useState(() => {
+    return localStorage.getItem('quick_scan_mode') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('quick_scan_mode', String(quickScanMode));
+  }, [quickScanMode]);
   const [pendingSyncs, setPendingSyncs] = useState<PendingSync[]>(() => {
     const saved = localStorage.getItem('pending_inventory_syncs');
     return saved ? JSON.parse(saved) : [];
@@ -154,7 +162,7 @@ export default function App() {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
-            action: 'submit_entry',
+            action: sync.action,
             ...sync.data
           })
         });
@@ -220,13 +228,17 @@ export default function App() {
     setIsScanning(false);
   };
 
-  const handleScan = async (barcode: string) => {
+  const handleScan = useCallback(async (barcode: string) => {
     if (!apiUrl) {
       toast.error('Sheets API URL not configured!');
       return;
     }
     
-    setIsScanning(false);
+    // In Quick Scan mode, we don't necessarily want to stop the whole session
+    if (!quickScanMode) {
+      setIsScanning(false);
+    }
+    
     setIsFetching(true);
     playScanSound();
     triggerVibrate();
@@ -248,8 +260,16 @@ export default function App() {
       }
 
       if (data.success && data.product) {
-        setScannedProduct(data.product);
+        if (quickScanMode) {
+          // Auto-submit 1 unit immediately
+          handleSubmitEntry(1, data.product);
+        } else {
+          setScannedProduct(data.product);
+        }
       } else {
+        // If product not found, we always show the prompt regardless of quickScanMode
+        // because we need a name
+        setIsScanning(false); 
         const errorMsg = data.error || 'Product Not Found';
         const quickAdd = confirm(`${errorMsg}\n\nWould you like to log this as a New Product?`);
         if (quickAdd) {
@@ -272,119 +292,164 @@ export default function App() {
       console.error('Scan fetch failed:', e);
       const msg = e instanceof Error ? e.message : 'Is the script published as "Anyone"?';
       toast.error(`Scan Failed: ${msg}`);
-      setIsScanning(true);
+      if (!quickScanMode) setIsScanning(true);
     } finally {
       setIsFetching(false);
     }
-  };
+  }, [apiUrl, quickScanMode, user]);
 
-  const handleSubmitEntry = async (quantity: number) => {
-    if (!scannedProduct || !user || !apiUrl) return;
+  const handleSubmitEntry = async (quantity: number, productToSubmit?: Product, autoResume?: boolean) => {
+    const product = productToSubmit || scannedProduct;
+    if (!product || !user || !apiUrl) return;
 
     setIsSubmitting(true);
-
     const entryData = {
       username: user,
-      barcode: scannedProduct.barcode,
-      name: scannedProduct.name,
-      category: scannedProduct.category,
-      uom: scannedProduct.uom,
+      barcode: product.barcode,
+      name: product.name,
+      category: product.category,
+      uom: product.uom,
       quantity
     };
+
+    // Optimistic UI Update
+    const tempId = crypto.randomUUID();
+    const optimisticEntry: HistoryEntry = {
+      id: tempId,
+      date: new Date().toISOString(),
+      ...entryData
+    };
+    setHistory(prev => [optimisticEntry, ...prev]);
 
     if (!isOnline) {
       const newSync: PendingSync = {
         id: crypto.randomUUID(),
+        action: 'submit_entry',
         data: entryData,
         timestamp: new Date().toISOString()
       };
       setPendingSyncs(prev => [...prev, newSync]);
-      toast.success('Saved offline. Will sync when online.');
-      setScannedProduct(null);
+      toast.success('Queued offline.', { icon: '💾' });
+      if (!productToSubmit) setScannedProduct(null);
       setIsSubmitting(false);
+      if (autoResume) setIsScanning(true);
       return;
     }
+
+    const toastId = quickScanMode ? undefined : toast.loading('Logging...');
 
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' }, // Bypass CORS preflight for simplified endpoint
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'submit_entry',
           ...entryData
         })
       });
 
-      if (!res.ok) {
-        throw new Error(`Server Error: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Server Error: ${res.status}`);
 
-      let data: ApiResponse<any>;
-      try {
-        data = await res.json();
-      } catch (err) {
-        throw new Error('Script returned non-JSON response. Check your Google Script deployment.');
-      }
-
+      const data: ApiResponse<any> = await res.json();
       if (data.success) {
-        toast.success('Inventory logged successfully!');
-        setScannedProduct(null);
+        toast.success(`Logged ${quantity} ${product.uom}: ${product.name}`, { 
+          id: toastId,
+          duration: 2000,
+          icon: '✅'
+        });
+        if (!productToSubmit) setScannedProduct(null);
         fetchHistory(user);
+        if (autoResume) setIsScanning(true);
       } else {
-        toast.error(`Submission Error: ${data.error || 'Unknown Error'}`);
+        // Rollback optimistic update
+        setHistory(prev => prev.filter(e => e.id !== tempId));
+        toast.error(`Error: ${data.error}`, { id: toastId });
       }
     } catch (e) {
       console.error('Submission failed:', e);
-      const errorMsg = e instanceof Error ? e.message : 'Unknown Network Error';
-      
-      // If fetch fails despite isOnline being true (network fluctuation)
+      // Keep optimistic entry as we fallback to local sync
       const newSync: PendingSync = {
         id: crypto.randomUUID(),
+        action: 'submit_entry',
         data: entryData,
         timestamp: new Date().toISOString()
       };
       setPendingSyncs(prev => [...prev, newSync]);
-      toast.success(`Stored locally (${errorMsg}).`);
-      setScannedProduct(null);
+      toast.success('Local save fallback.', { id: toastId });
+      if (!productToSubmit) setScannedProduct(null);
+      if (autoResume) setIsScanning(true);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleEditLast = async () => {
-    if (history.length === 0 || !user || !apiUrl) return;
-    
-    const last = history[0];
-    const newQty = prompt(`Update quantity for ${last.name}?`, String(last.quantity));
-    
-    if (newQty === null) return;
-    const qty = parseFloat(newQty);
-    
-    if (isNaN(qty) || qty <= 0) {
-      toast.error('Invalid quantity');
+  const [editingEntry, setEditingEntry] = useState<HistoryEntry | null>(null);
+
+  const handleEditLast = () => {
+    if (history.length === 0) return;
+    setEditingEntry(history[0]);
+  };
+
+  const handleUpdateEntry = async (quantity: number) => {
+    if (!editingEntry || !user || !apiUrl) return;
+
+    setIsSubmitting(true);
+    const toastId = toast.loading('Processing update...', { id: 'edit-entry' });
+
+    const updateData = {
+      username: user,
+      barcode: editingEntry.barcode,
+      name: editingEntry.name,
+      category: editingEntry.category,
+      uom: editingEntry.uom,
+      quantity
+    };
+
+    if (!isOnline) {
+      const newSync: PendingSync = {
+        id: crypto.randomUUID(),
+        action: 'update_last_entry',
+        data: updateData,
+        timestamp: new Date().toISOString()
+      };
+      setPendingSyncs(prev => [...prev, newSync]);
+      toast.success('Edit queued offline!', { id: toastId });
+      setEditingEntry(null);
+      setIsSubmitting(false);
       return;
     }
 
-    toast.loading('Updating...', { id: 'edit-entry' });
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'update_last_entry',
-          username: user,
-          quantity: qty
+          ...updateData
         })
       });
+
       const data = await res.json();
       if (data.success) {
-        toast.success('Last entry updated', { id: 'edit-entry' });
+        toast.success('Entry updated successfully!', { id: toastId });
+        setEditingEntry(null);
         fetchHistory(user);
       } else {
-        toast.error(data.error || 'Update failed', { id: 'edit-entry' });
+        toast.error(data.error || 'Update failed', { id: toastId });
       }
     } catch (e) {
-      toast.error('Network error', { id: 'edit-entry' });
+      console.error('Update failed:', e);
+      const newSync: PendingSync = {
+        id: crypto.randomUUID(),
+        action: 'update_last_entry',
+        data: updateData,
+        timestamp: new Date().toISOString()
+      };
+      setPendingSyncs(prev => [...prev, newSync]);
+      toast.success('Network issue. Edit saved locally.', { id: toastId });
+      setEditingEntry(null);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -638,6 +703,34 @@ export default function App() {
         )}
         {/* Scanner Component */}
         <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "w-2 h-2 rounded-full animate-pulse",
+                isScanning ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-natural-muted"
+              )} />
+              <span className="text-[10px] font-black text-natural-muted uppercase tracking-[0.2em]">
+                {isScanning ? 'Scanner Active' : 'Scanner Standby'}
+              </span>
+            </div>
+            <button 
+              onClick={() => setQuickScanMode(!quickScanMode)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all",
+                quickScanMode 
+                  ? "bg-natural-accent border-natural-accent text-white shadow-lg shadow-natural-accent/20" 
+                  : "bg-white border-natural-border text-natural-muted hover:border-natural-accent"
+              )}
+            >
+              <div className={cn(
+                "w-3 h-3 rounded-full flex items-center justify-center border",
+                quickScanMode ? "bg-white border-white" : "border-natural-muted"
+              )}>
+                {quickScanMode && <Check className="w-2 h-2 text-natural-accent" />}
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-widest">Quick Scan (Qty: 1)</span>
+            </button>
+          </div>
           <AnimatePresence mode="wait">
             {isScanning ? (
               <motion.div
@@ -713,14 +806,34 @@ export default function App() {
         <HistoryList entries={history} onEditLast={handleEditLast} />
       </main>
 
-      {/* Entry Form Modal */}
+      {/* Entry Form Modal (Scanning) */}
       <AnimatePresence>
         {scannedProduct && (
           <InventoryForm 
             product={scannedProduct} 
             isSubmitting={isSubmitting}
-            onSubmit={handleSubmitEntry}
+            onSubmit={(qty) => handleSubmitEntry(qty)}
+            onBatchSubmit={(qty) => handleSubmitEntry(qty, undefined, true)}
             onCancel={() => setScannedProduct(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Entry Form Modal (Editing) */}
+      <AnimatePresence>
+        {editingEntry && (
+          <InventoryForm 
+            product={{
+              barcode: editingEntry.barcode,
+              name: editingEntry.name,
+              category: editingEntry.category,
+              uom: editingEntry.uom
+            }} 
+            initialQuantity={editingEntry.quantity}
+            isSubmitting={isSubmitting}
+            onSubmit={handleUpdateEntry}
+            onCancel={() => setEditingEntry(null)}
+            title="Update Entry"
           />
         )}
       </AnimatePresence>

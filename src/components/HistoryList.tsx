@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { HistoryEntry } from '../types';
-import { Clock, Edit2, Search, ArrowUpDown, Calendar, Hash } from 'lucide-react';
+import { Clock, Edit2, Search, ArrowUpDown, Calendar, Hash, Filter, X, ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -17,12 +17,43 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  
+  // New Filter States
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  const categories = useMemo(() => {
+    const cats = new Set(entries.map(e => e.category).filter(Boolean));
+    return ['All', ...Array.from(cats)].sort();
+  }, [entries]);
 
   const filteredAndSortedEntries = useMemo(() => {
-    const filtered = entries.filter(entry => 
-      entry.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.barcode.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let filtered = entries.filter(entry => {
+      // Search Filter
+      const matchesSearch = entry.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           entry.barcode.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Category Filter
+      const matchesCategory = selectedCategory === 'All' || entry.category === selectedCategory;
+
+      // Date Range Filter
+      let matchesDate = true;
+      if (startDate || endDate) {
+        const entryDate = new Date(entry.date).setHours(0, 0, 0, 0);
+        if (startDate) {
+          const start = new Date(startDate).setHours(0, 0, 0, 0);
+          if (entryDate < start) matchesDate = false;
+        }
+        if (endDate) {
+          const end = new Date(endDate).setHours(23, 59, 59, 999);
+          if (entryDate > end) matchesDate = false;
+        }
+      }
+
+      return matchesSearch && matchesCategory && matchesDate;
+    });
 
     return [...filtered].sort((a, b) => {
       if (sortField === 'date') {
@@ -33,7 +64,7 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
         return sortOrder === 'desc' ? b.quantity - a.quantity : a.quantity - b.quantity;
       }
     });
-  }, [entries, searchQuery, sortField, sortOrder]);
+  }, [entries, searchQuery, sortField, sortOrder, selectedCategory, startDate, endDate]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -43,6 +74,24 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
       setSortOrder('desc');
     }
   };
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setStartDate('');
+    setEndDate('');
+    setSortField('date');
+    setSortOrder('desc');
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedCategory !== 'All') count++;
+    if (startDate) count++;
+    if (endDate) count++;
+    if (searchQuery) count++;
+    return count;
+  }, [selectedCategory, startDate, endDate, searchQuery]);
 
   return (
     <div className="space-y-4">
@@ -65,30 +114,123 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
 
         {entries.length > 0 && (
           <div className="space-y-3">
-            <div className="relative group px-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-natural-muted group-focus-within:text-natural-accent transition-colors" />
-              <input 
-                type="text"
-                placeholder="FILTER RECENT ENTRIES..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/50 rounded-xl border border-natural-border focus:border-natural-accent outline-none transition-all text-natural-text font-bold text-[10px] tracking-widest uppercase"
-              />
+            <div className="flex gap-2 px-1">
+              <div className="relative group flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-natural-muted group-focus-within:text-natural-accent transition-colors" />
+                <input 
+                  type="text"
+                  placeholder="SEARCH ENTRIES..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/50 rounded-xl border border-natural-border focus:border-natural-accent outline-none transition-all text-natural-text font-bold text-[10px] tracking-widest uppercase"
+                />
+              </div>
+              <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={cn(
+                  "p-3 rounded-xl border transition-all relative",
+                  showFilters || activeFilterCount > 0
+                    ? "bg-natural-text text-white border-natural-text" 
+                    : "bg-white text-natural-muted border-natural-border hover:bg-natural-bg"
+                )}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-natural-accent text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-natural-bg animate-in zoom-in">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
             </div>
+
+            <AnimatePresence>
+              {showFilters && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden bg-white/30 rounded-2xl border border-natural-border/50 mx-1"
+                >
+                  <div className="p-4 space-y-4">
+                    {/* Category Filter */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[8px] font-black text-natural-muted uppercase tracking-[0.2em] ml-1">By Category</label>
+                        {selectedCategory !== 'All' && (
+                          <button 
+                            onClick={() => setSelectedCategory('All')}
+                            className="text-[8px] font-black text-natural-accent uppercase tracking-widest"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {categories.map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setSelectedCategory(cat)}
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all",
+                              selectedCategory === cat 
+                                ? "bg-natural-accent text-white shadow-sm" 
+                                : "bg-white/50 text-natural-muted border border-natural-border hover:bg-white"
+                            )}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div className="space-y-2">
+                       <label className="text-[8px] font-black text-natural-muted uppercase tracking-[0.2em] ml-1">By Date Range</label>
+                       <div className="grid grid-cols-2 gap-2">
+                         <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-natural-muted pointer-events-none" />
+                            <input 
+                              type="date"
+                              value={startDate}
+                              onChange={(e) => setStartDate(e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 bg-white/50 border border-natural-border rounded-lg text-[10px] font-bold uppercase outline-none focus:border-natural-accent transition-all"
+                            />
+                         </div>
+                         <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-natural-muted pointer-events-none" />
+                            <input 
+                              type="date"
+                              value={endDate}
+                              onChange={(e) => setEndDate(e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 bg-white/50 border border-natural-border rounded-lg text-[10px] font-bold uppercase outline-none focus:border-natural-accent transition-all"
+                            />
+                         </div>
+                       </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between gap-4">
+                       <button 
+                         onClick={resetFilters}
+                         className="text-[8px] font-black text-red-500 uppercase tracking-widest hover:underline flex items-center gap-1"
+                       >
+                         <X className="w-2.5 h-2.5" />
+                         Clear All Filters
+                       </button>
+                       <button 
+                         onClick={() => setShowFilters(false)}
+                         className="px-4 py-1.5 bg-natural-text text-white rounded-lg text-[9px] font-black uppercase tracking-widest"
+                       >
+                         Done
+                       </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div className="flex flex-col gap-2 px-1">
               <div className="flex items-center justify-between">
-                <span className="text-[8px] font-black text-natural-muted uppercase tracking-[0.2em] ml-1">Sort Results By</span>
-                <button 
-                  onClick={() => {
-                    setSortField('date');
-                    setSortOrder('desc');
-                    setSearchQuery('');
-                  }}
-                  className="text-[8px] font-black text-natural-accent uppercase tracking-widest hover:underline"
-                >
-                  Reset All
-                </button>
+                <span className="text-[8px] font-black text-natural-muted uppercase tracking-[0.2em] ml-1">Order By</span>
               </div>
               <div className="flex items-center gap-2">
                 <button

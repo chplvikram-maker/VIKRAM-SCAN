@@ -8,18 +8,34 @@ import { toast } from 'react-hot-toast';
 interface InventoryFormProps {
   product: Product;
   onSubmit: (quantity: number) => void;
+  onBatchSubmit?: (quantity: number) => void;
   onCancel: () => void;
   isSubmitting: boolean;
+  initialQuantity?: number;
+  title?: string;
 }
 
-export default function InventoryForm({ product, onSubmit, onCancel, isSubmitting }: InventoryFormProps) {
-  const [quantity, setQuantity] = useState<string>('');
+export default function InventoryForm({ 
+  product, 
+  onSubmit, 
+  onBatchSubmit,
+  onCancel, 
+  isSubmitting,
+  initialQuantity,
+  title = "Verify Entry"
+}: InventoryFormProps) {
+  const [quantity, setQuantity] = useState<string>(initialQuantity ? String(initialQuantity) : '');
 
   // Auto focus input on mount
   useEffect(() => {
     const input = document.getElementById('quantity-input');
-    if (input) input.focus();
-  }, []);
+    if (input) {
+      input.focus();
+      if (initialQuantity) {
+        (input as HTMLInputElement).select();
+      }
+    }
+  }, [initialQuantity]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -48,7 +64,7 @@ export default function InventoryForm({ product, onSubmit, onCancel, isSubmittin
     >
       <div className="w-full max-w-md bg-natural-screen rounded-[32px] p-6 shadow-2xl border border-natural-border">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-black text-natural-text uppercase tracking-tight">Verify Entry</h2>
+          <h2 className="text-xl font-black text-natural-text uppercase tracking-tight">{title}</h2>
           <button 
             onClick={onCancel}
             className="p-2 hover:bg-natural-bg rounded-full transition-colors"
@@ -66,7 +82,7 @@ export default function InventoryForm({ product, onSubmit, onCancel, isSubmittin
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="quantity-input" className="block text-[10px] font-black text-natural-muted uppercase tracking-[0.2em] ml-2">
               Physical Count (Qty)
@@ -84,24 +100,41 @@ export default function InventoryForm({ product, onSubmit, onCancel, isSubmittin
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className={cn(
-              "w-full py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-3 transition-all uppercase tracking-widest",
-              "bg-natural-accent hover:bg-natural-text text-white shadow-lg shadow-natural-accent/20",
-              "disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {onBatchSubmit && !initialQuantity && (
+              <button
+                type="button"
+                onClick={() => {
+                  const val = parseFloat(quantity);
+                  if (val > 0) onBatchSubmit(val);
+                  else toast.error('Enter valid quantity');
+                }}
+                disabled={isSubmitting}
+                className="py-4 rounded-2xl font-black text-sm border-2 border-natural-text text-natural-text hover:bg-natural-text hover:text-white transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+              >
+                Scan Next
+              </button>
             )}
-          >
-            {isSubmitting ? (
-              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="w-6 h-6" />
-                Submit Entry
-              </>
-            )}
-          </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={cn(
+                "py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all uppercase tracking-widest flex-1",
+                "bg-natural-accent hover:bg-natural-text text-white shadow-lg shadow-natural-accent/20",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                (!onBatchSubmit || initialQuantity) && "col-span-full py-5"
+              )}
+            >
+              {isSubmitting ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <CheckCircle2 className="w-5 h-5" />
+                  {initialQuantity ? 'Update' : 'Submit'}
+                </>
+              )}
+            </button>
+          </div>
         </form>
       </div>
     </motion.div>

@@ -6,6 +6,7 @@ export interface Product {
 }
 
 export interface HistoryEntry {
+  id: string;
   date: string;
   barcode: string;
   name: string;
@@ -16,6 +17,7 @@ export interface HistoryEntry {
 
 export interface PendingSync {
   id: string;
+  action: 'submit_entry' | 'update_last_entry';
   data: {
     username: string;
     barcode: string;
