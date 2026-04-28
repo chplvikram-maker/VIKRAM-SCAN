@@ -1,0 +1,8 @@
+{
+  "name": "VIKRAM SCAN",
+  "description": "A high-performance mobile tool for warehouse stock-taking. Scans barcodes, fetches product details from Google Sheets, and logs stock entries with timestamps and user tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
