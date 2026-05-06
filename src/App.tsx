@@ -100,24 +100,6 @@ export default function App() {
   });
 
   const [configInput, setConfigInput] = useState('');
-  const [deviceInfo] = useState(() => {
-    const ua = navigator.userAgent;
-    let browser = "Browser";
-    let os = "OS";
-
-    if (ua.includes("Firefox")) browser = "Firefox";
-    else if (ua.includes("Chrome")) browser = "Chrome";
-    else if (ua.includes("Safari")) browser = "Safari";
-    else if (ua.includes("Edge")) browser = "Edge";
-
-    if (ua.includes("Windows")) os = "Windows";
-    else if (ua.includes("Mac")) os = "Mac";
-    else if (ua.includes("Linux")) os = "Linux";
-    else if (ua.includes("Android")) os = "Android";
-    else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
-
-    return `${os} (${browser})`;
-  });
 
   const fetchHistory = useCallback(async (username: string) => {
     if (!apiUrl) return;
@@ -429,8 +411,7 @@ export default function App() {
       uom: product.uom,
       quantity,
       type,
-      remarks,
-      deviceInfo
+      remarks
     };
 
     // Optimistic UI Update
@@ -529,8 +510,7 @@ export default function App() {
       uom: editingEntry.uom,
       quantity,
       type,
-      remarks,
-      deviceInfo
+      remarks
     };
 
     if (!isOnline) {

@@ -120,26 +120,45 @@ export default function Scanner({ onScan, isScanning }: ScannerProps) {
       {/* Custom Overlay */}
       <div className="absolute inset-0 pointer-events-none z-10">
         {/* Viewfinder Frame */}
-        <div className="absolute inset-[15%] border-2 border-white/20 rounded-3xl">
-          {/* Corner Accents */}
-          <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-natural-accent rounded-tl-xl" />
-          <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-natural-accent rounded-tr-xl" />
-          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-natural-accent rounded-bl-xl" />
-          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-natural-accent rounded-br-xl" />
+        <div className="absolute inset-[15%] border-2 border-white/10 rounded-3xl overflow-hidden">
+          {/* Corner Accents with Pulse */}
+          <motion.div 
+            animate={{ opacity: [1, 0.4, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-natural-accent rounded-tl-xl" />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-natural-accent rounded-tr-xl" />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-natural-accent rounded-bl-xl" />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-natural-accent rounded-br-xl" />
+          </motion.div>
           
           {/* Scanning Line Animation */}
           <motion.div 
             animate={{ 
-              top: ['0%', '100%', '0%'],
-              opacity: [0.3, 0.8, 0.3]
+              top: ['-5%', '105%'],
             }}
             transition={{ 
-              duration: 2.5, 
+              duration: 2, 
               repeat: Infinity, 
-              ease: "easeInOut" 
+              ease: "linear" 
             }}
-            className="absolute left-4 right-4 h-0.5 bg-natural-accent shadow-[0_0_15px_rgba(var(--natural-accent),0.8)]"
+            className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-natural-accent/80 to-transparent shadow-[0_0_20px_rgba(90,90,64,0.5)]"
           />
+
+          {/* Grainy scanning effect (subtle) */}
+          <div className="absolute inset-0 bg-white/[0.02] mix-blend-overlay" />
+        </div>
+
+        {/* Live Indicator */}
+        <div className="absolute top-6 left-0 right-0 flex justify-center">
+          <motion.div 
+            animate={{ opacity: [1, 0.5, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className="px-3 py-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-2"
+          >
+            <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(239,68,68,0.8)]" />
+            <span className="text-[9px] font-black text-white uppercase tracking-[0.3em]">Scanner Active</span>
+          </motion.div>
         </div>
 
         {/* Success Flash Overlay */}
@@ -156,8 +175,8 @@ export default function Scanner({ onScan, isScanning }: ScannerProps) {
 
         {/* Info Text */}
         <div className="absolute bottom-6 left-0 right-0 text-center">
-          <p className="text-[10px] font-black text-white/60 uppercase tracking-[0.3em]">
-            Align Barcode within edges
+          <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.4em]">
+            Processing Frame...
           </p>
         </div>
       </div>

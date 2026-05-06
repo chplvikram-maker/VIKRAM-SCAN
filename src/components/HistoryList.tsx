@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { HistoryEntry } from '../types';
-import { Clock, Edit2, Search, ArrowUpDown, Calendar, Hash, Filter, X, ChevronDown, Check, ClipboardCheck, Box, History, CheckCircle2, Smartphone, Monitor } from 'lucide-react';
+import { Clock, Edit2, Search, ArrowUpDown, Calendar, Hash, Filter, X, ChevronDown, Check, ClipboardCheck, Box, History, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -502,18 +502,6 @@ export default function HistoryList({ entries, onEditLast }: HistoryListProps) {
                             {new Date(entry.date).toLocaleString()}
                           </p>
                         </div>
-                        {entry.deviceInfo && (
-                          <div className="col-span-2 flex items-center gap-2 p-2 bg-zinc-50 rounded-lg border border-zinc-100">
-                            {entry.deviceInfo.toLowerCase().includes('ios') || entry.deviceInfo.toLowerCase().includes('android') || entry.deviceInfo.toLowerCase().includes('iphone') ? (
-                              <Smartphone className="w-3 h-3 text-natural-muted" />
-                            ) : (
-                              <Monitor className="w-3 h-3 text-natural-muted" />
-                            )}
-                            <span className="text-[9px] font-black text-natural-muted uppercase tracking-[0.1em]">
-                              Operator Device: {entry.deviceInfo}
-                            </span>
-                          </div>
-                        )}
                         {entry.remarks && (
                           <div className="col-span-2 space-y-1 bg-natural-bg/50 p-3 rounded-xl border border-natural-border/30">
                             <span className="text-[10px] font-black text-natural-muted uppercase tracking-widest flex items-center gap-2">

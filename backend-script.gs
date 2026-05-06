@@ -72,7 +72,17 @@ function getProduct(barcode) {
 }
 
 function submitEntry(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('STOCK_ENTRY');
+  let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('STOCK_ENTRY');
+  
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('STOCK_ENTRY');
+    sheet.appendRow([
+      'Date', 'Barcode', 'Name', 'Category', 'Quantity', 'UOM', 'Type', 'Username', 'Remarks'
+    ]);
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#f3f3f3');
+    sheet.setFrozenRows(1);
+  }
+  
   const timestamp = new Date();
   
   sheet.appendRow([
@@ -84,8 +94,7 @@ function submitEntry(data) {
     data.uom,
     data.type || 'IN',
     data.username,
-    data.remarks || '',
-    data.deviceInfo || ''
+    data.remarks || ''
   ]);
   
   return response({ success: true });
@@ -111,8 +120,7 @@ function getHistory(username) {
       quantity: row[4],
       uom: row[5],
       type: row[6] || 'IN',
-      remarks: row[8] || '',
-      deviceInfo: row[9] || ''
+      remarks: row[8] || ''
     }));
     
   return response({ success: true, history });
@@ -130,11 +138,10 @@ function updateLastEntry(data) {
     return response({ success: false, error: 'Cannot update: Last entry belongs to another user' });
   }
 
-  // Update quantity (col 5), type (col 7), remarks (col 9) and deviceInfo (col 10)
+  // Update quantity (col 5), type (col 7) and remarks (col 9)
   sheet.getRange(lastRow, 5).setValue(data.quantity);
   sheet.getRange(lastRow, 7).setValue(data.type || 'IN');
   sheet.getRange(lastRow, 9).setValue(data.remarks || '');
-  sheet.getRange(lastRow, 10).setValue(data.deviceInfo || '');
   return response({ success: true });
 }
 

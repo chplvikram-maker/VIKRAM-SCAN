@@ -15,7 +15,6 @@ export interface HistoryEntry {
   uom: string;
   type: 'IN' | 'OUT' | 'AUDIT';
   remarks?: string;
-  deviceInfo?: string;
 }
 
 export interface PendingSync {
@@ -30,7 +29,6 @@ export interface PendingSync {
     uom: string;
     type: 'IN' | 'OUT' | 'AUDIT';
     remarks?: string;
-    deviceInfo?: string;
   };
   timestamp: string;
   attempts?: number;
