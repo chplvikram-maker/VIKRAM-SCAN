@@ -82,7 +82,10 @@ function submitEntry(data) {
     data.category,
     data.quantity,
     data.uom,
-    data.username
+    data.type || 'IN',
+    data.username,
+    data.remarks || '',
+    data.deviceInfo || ''
   ]);
   
   return response({ success: true });
@@ -90,11 +93,14 @@ function submitEntry(data) {
 
 function getHistory(username) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('STOCK_ENTRY');
+  if (!sheet) return response({ success: true, history: [] });
+  
   const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return response({ success: true, history: [] });
   
   const history = values
     .slice(1) // Skip header
-    .filter(row => row[6] === username)
+    .filter(row => row[7] === username)
     .reverse()
     .slice(0, 5)
     .map(row => ({
@@ -103,7 +109,10 @@ function getHistory(username) {
       name: row[2],
       category: row[3],
       quantity: row[4],
-      uom: row[5]
+      uom: row[5],
+      type: row[6] || 'IN',
+      remarks: row[8] || '',
+      deviceInfo: row[9] || ''
     }));
     
   return response({ success: true, history });
@@ -115,13 +124,17 @@ function updateLastEntry(data) {
   
   if (lastRow < 2) return response({ success: false, error: 'No entries to update' });
   
-  // Verify it's the right user's entry (optional but safe)
-  const lastUsername = sheet.getRange(lastRow, 7).getValue();
+  // Verify it's the right user's entry (Username is now in column 8)
+  const lastUsername = sheet.getRange(lastRow, 8).getValue();
   if (lastUsername !== data.username) {
     return response({ success: false, error: 'Cannot update: Last entry belongs to another user' });
   }
 
+  // Update quantity (col 5), type (col 7), remarks (col 9) and deviceInfo (col 10)
   sheet.getRange(lastRow, 5).setValue(data.quantity);
+  sheet.getRange(lastRow, 7).setValue(data.type || 'IN');
+  sheet.getRange(lastRow, 9).setValue(data.remarks || '');
+  sheet.getRange(lastRow, 10).setValue(data.deviceInfo || '');
   return response({ success: true });
 }
 

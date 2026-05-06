@@ -86,16 +86,38 @@ export default function App() {
   const [quickScanMode, setQuickScanMode] = useState(() => {
     return localStorage.getItem('quick_scan_mode') === 'true';
   });
+  const [quickScanType, setQuickScanType] = useState<'IN' | 'OUT' | 'AUDIT'>(() => {
+    return (localStorage.getItem('quick_scan_type') as 'IN' | 'OUT' | 'AUDIT') || 'IN';
+  });
 
   useEffect(() => {
     localStorage.setItem('quick_scan_mode', String(quickScanMode));
-  }, [quickScanMode]);
+    localStorage.setItem('quick_scan_type', quickScanType);
+  }, [quickScanMode, quickScanType]);
   const [pendingSyncs, setPendingSyncs] = useState<PendingSync[]>(() => {
     const saved = localStorage.getItem('pending_inventory_syncs');
     return saved ? JSON.parse(saved) : [];
   });
 
   const [configInput, setConfigInput] = useState('');
+  const [deviceInfo] = useState(() => {
+    const ua = navigator.userAgent;
+    let browser = "Browser";
+    let os = "OS";
+
+    if (ua.includes("Firefox")) browser = "Firefox";
+    else if (ua.includes("Chrome")) browser = "Chrome";
+    else if (ua.includes("Safari")) browser = "Safari";
+    else if (ua.includes("Edge")) browser = "Edge";
+
+    if (ua.includes("Windows")) os = "Windows";
+    else if (ua.includes("Mac")) os = "Mac";
+    else if (ua.includes("Linux")) os = "Linux";
+    else if (ua.includes("Android")) os = "Android";
+    else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+
+    return `${os} (${browser})`;
+  });
 
   const fetchHistory = useCallback(async (username: string) => {
     if (!apiUrl) return;
@@ -151,55 +173,62 @@ export default function App() {
     setSyncProgress(0);
     
     // Only attempt items that haven't reached max retries and aren't already syncing
-    const itemsToSync = pendingSyncs.filter(s => (s.attempts || 0) < 5 && s.status !== 'syncing');
+    const itemsToSync = pendingSyncs.filter(s => (s.attempts || 0) < 10 && s.status !== 'syncing');
     if (itemsToSync.length === 0) {
+      if (pendingSyncs.length > 0) {
+        toast.error('Some items reached max retries. Please check manual sync queue.', { id: 'max-retries' });
+      }
       setIsSyncing(false);
       return;
     }
 
-    const toastId = toast.loading(`Syncing ${itemsToSync.length} entries...`);
+    const toastId = toast.loading(`Manual sync: ${itemsToSync.length} entries...`);
     
     let successCount = 0;
     let failCount = 0;
 
-    // We'll update pendingSyncs iteratively to show progress
     for (let i = 0; i < itemsToSync.length; i++) {
       const syncItem = itemsToSync[i];
       
-      // Update status to syncing
       setPendingSyncs(prev => prev.map(s => s.id === syncItem.id ? { ...s, status: 'syncing' } : s));
       
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout per item
+
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             action: syncItem.action,
             ...syncItem.data
-          })
+          }),
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data: ApiResponse<any> = await res.json();
         
         if (data.success) {
-          // Remove successful item
           setPendingSyncs(prev => prev.filter(s => s.id !== syncItem.id));
           successCount++;
         } else {
-          // Mark as failed with error
           setPendingSyncs(prev => prev.map(s => 
             s.id === syncItem.id 
-              ? { ...s, status: 'failed', lastError: data.error || 'API Error', attempts: (s.attempts || 0) + 1 } 
+              ? { ...s, status: 'failed', lastError: data.error || 'Server rejected', attempts: (s.attempts || 0) + 1 } 
               : s
           ));
           failCount++;
         }
       } catch (e) {
-        console.error(`Sync failed for ${syncItem.id}:`, e);
-        // Mark as failed with network error
+        console.error(`[SYNC ERROR] ${syncItem.id}:`, e);
+        const errorMsg = e instanceof Error ? e.message : 'Connection timeout';
         setPendingSyncs(prev => prev.map(s => 
           s.id === syncItem.id 
-            ? { ...s, status: 'failed', lastError: e instanceof Error ? e.message : 'Network Error', attempts: (s.attempts || 0) + 1 } 
+            ? { ...s, status: 'failed', lastError: errorMsg, attempts: (s.attempts || 0) + 1 } 
             : s
         ));
         failCount++;
@@ -235,21 +264,32 @@ export default function App() {
     const item = pendingSyncs.find(s => s.id === id);
     if (!item) return;
 
-    const toastId = toast.loading('Retrying...');
+    const toastId = toast.loading('Force Retrying...');
+    
+    setPendingSyncs(prev => prev.map(s => s.id === id ? { ...s, status: 'syncing' } : s));
+
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: item.action,
           ...item.data
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data: ApiResponse<any> = await res.json();
       if (data.success) {
         setPendingSyncs(prev => prev.filter(s => s.id !== id));
-        toast.success('Synced successfully!', { id: toastId });
+        toast.success('Sync Successful!', { id: toastId });
         if (user) fetchHistory(user);
       } else {
         setPendingSyncs(prev => prev.map(s => 
@@ -257,10 +297,16 @@ export default function App() {
             ? { ...s, lastError: data.error || 'Server rejected', attempts: (s.attempts || 0) + 1, status: 'failed' } 
             : s
         ));
-        toast.error(`Retry failed: ${data.error}`, { id: toastId });
+        toast.error(`Sync Error: ${data.error}`, { id: toastId });
       }
     } catch (e) {
-      toast.error('Retry failed: Network error', { id: toastId });
+      console.error(`[RETRY ERROR] ${id}:`, e);
+      setPendingSyncs(prev => prev.map(s => 
+        s.id === id 
+          ? { ...s, lastError: e instanceof Error ? e.message : 'Network failure', attempts: (s.attempts || 0) + 1, status: 'failed' } 
+          : s
+      ));
+      toast.error('Sync Error: Network failure', { id: toastId });
     }
   };
 
@@ -333,8 +379,8 @@ export default function App() {
 
       if (data.success && data.product) {
         if (quickScanMode) {
-          // Auto-submit 1 unit immediately
-          handleSubmitEntry(1, data.product);
+          // Auto-submit 1 unit immediately using current session type
+          handleSubmitEntry(1, quickScanType, undefined, data.product);
         } else {
           setScannedProduct(data.product);
         }
@@ -370,7 +416,7 @@ export default function App() {
     }
   }, [apiUrl, quickScanMode, user]);
 
-  const handleSubmitEntry = async (quantity: number, productToSubmit?: Product, autoResume?: boolean) => {
+  const handleSubmitEntry = async (quantity: number, type: 'IN' | 'OUT' | 'AUDIT' = 'IN', remarks?: string, productToSubmit?: Product, autoResume?: boolean) => {
     const product = productToSubmit || scannedProduct;
     if (!product || !user || !apiUrl) return;
 
@@ -381,7 +427,10 @@ export default function App() {
       name: product.name,
       category: product.category,
       uom: product.uom,
-      quantity
+      quantity,
+      type,
+      remarks,
+      deviceInfo
     };
 
     // Optimistic UI Update
@@ -466,7 +515,7 @@ export default function App() {
     setEditingEntry(history[0]);
   };
 
-  const handleUpdateEntry = async (quantity: number) => {
+  const handleUpdateEntry = async (quantity: number, type: 'IN' | 'OUT' | 'AUDIT' = 'IN', remarks?: string) => {
     if (!editingEntry || !user || !apiUrl) return;
 
     setIsSubmitting(true);
@@ -478,7 +527,10 @@ export default function App() {
       name: editingEntry.name,
       category: editingEntry.category,
       uom: editingEntry.uom,
-      quantity
+      quantity,
+      type,
+      remarks,
+      deviceInfo
     };
 
     if (!isOnline) {
@@ -702,13 +754,13 @@ export default function App() {
               {!isOnline && <WifiOff className="w-3 h-3 text-red-500" />}
               {isOnline && <Wifi className="w-3 h-3 text-emerald-500 opacity-50" />}
             </div>
-            <span className="text-[10px] text-natural-muted font-bold uppercase tracking-widest">VIKRAM SCAN PRO</span>
+            <span className="text-[11px] text-natural-muted font-bold uppercase tracking-widest leading-none">VIKRAM SCAN PRO</span>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
             <div className="text-[10px] text-natural-muted font-bold uppercase tracking-wider">Operator</div>
-            <div className="font-bold text-natural-text">{user}</div>
+            <div className="text-sm font-bold text-natural-text">{user}</div>
           </div>
           <button 
             onClick={handleLogout}
@@ -737,14 +789,14 @@ export default function App() {
                   )}
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-amber-900 leading-tight">
-                    {isSyncing ? 'Synchronizing Cloud' : 'Sync Queue Active'}
+                  <div className="text-[15px] font-black text-amber-900 leading-tight">
+                    {isSyncing ? 'Cloud Sync in Progress' : 'Sync Queue Active'}
                   </div>
-                  <div className="text-[10px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-2">
+                  <div className="text-[11px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-2 mt-0.5">
                     {pendingSyncs.length} entries pending
                     {pendingSyncs.some(s => s.status === 'failed') && (
-                      <span className="flex items-center gap-1 text-red-600 font-black">
-                        <AlertCircle className="w-2.5 h-2.5" />
+                      <span className="flex items-center gap-1.5 text-red-600 font-black">
+                        <AlertCircle className="w-3 h-3" />
                         Errors detected
                       </span>
                     )}
@@ -756,9 +808,9 @@ export default function App() {
                   <button
                     onClick={syncOfflineData}
                     disabled={!isOnline || pendingSyncs.every(s => (s.attempts || 0) >= 5)}
-                    className="px-4 py-2 bg-natural-text hover:bg-black disabled:opacity-30 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-black/10"
+                    className="px-5 py-2.5 bg-natural-text hover:bg-black disabled:opacity-30 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-black/10 active:scale-95"
                   >
-                    <RefreshCcw className={cn("w-3 h-3", isOnline && "animate-pulse")} />
+                    <RefreshCcw className={cn("w-3.5 h-3.5", isOnline && "animate-pulse")} />
                     Retry Cloud Sync
                   </button>
                 )}
@@ -793,47 +845,63 @@ export default function App() {
                           )}
                         </div>
                         <div>
-                          <div className="text-[11px] font-black text-natural-text leading-none mb-1">
+                          <div className="text-[12px] font-black text-natural-text leading-tight mb-1">
                             {sync.data.name}
                           </div>
-                          <div className="text-[9px] text-natural-muted font-bold uppercase tracking-wider flex items-center gap-2">
+                          <div className="text-[10px] text-natural-muted font-bold uppercase tracking-wider flex items-center gap-2">
                             {sync.data.quantity} {sync.data.uom} • {new Date(sync.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 px-1">
                         {sync.status === 'syncing' ? (
-                          <div className="px-2 py-1 bg-amber-100 text-amber-700 text-[8px] font-black uppercase rounded-lg animate-pulse">Syncing...</div>
+                          <div className="px-3 py-1 bg-amber-500 text-white text-[9px] font-black uppercase rounded-full flex items-center gap-1.5 shadow-sm">
+                            <RotateCw className="w-2.5 h-2.5 animate-spin" />
+                            SYCING
+                          </div>
+                        ) : sync.status === 'pending' ? (
+                          <div className="px-3 py-1 bg-zinc-100 text-zinc-500 text-[9px] font-black uppercase rounded-full flex items-center gap-1.5">
+                            <RotateCw className="w-2.5 h-2.5" />
+                            PENDING
+                          </div>
                         ) : (
-                          <>
+                          <div className="flex items-center gap-1">
                             <button 
                               onClick={() => retrySyncItem(sync.id)}
                               disabled={!isOnline || isSyncing}
-                              className="p-1.5 hover:bg-natural-bg rounded-lg text-natural-muted hover:text-emerald-600 transition-colors"
-                              title="Retry entry"
+                              className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl transition-all shadow-sm active:scale-90"
+                              title="Sync Now"
                             >
-                              <RotateCw className="w-3.5 h-3.5" />
+                              <RotateCw className="w-4 h-4" />
                             </button>
                             <button 
                               onClick={() => removePendingSync(sync.id)}
                               disabled={isSyncing}
-                              className="p-1.5 hover:bg-red-50 rounded-lg text-natural-muted hover:text-red-500 transition-colors"
-                              title="Discard entry"
+                              className="p-2.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-all shadow-sm active:scale-90"
+                              title="Discard"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
                     </div>
                     
                     {sync.status === 'failed' && (
-                      <div className="px-2 py-1.5 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2">
-                        <AlertCircle className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+                      <div className="px-3 py-2.5 bg-red-50/80 border border-red-100 rounded-2xl flex items-start gap-3 mt-1 shadow-sm">
+                        <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
-                          <p className="text-[9px] text-red-700 font-bold leading-tight uppercase tracking-tight">Sync Error: {sync.lastError}</p>
-                          <p className="text-[8px] text-red-500 font-bold uppercase tracking-widest mt-0.5">Attempt {sync.attempts}/5</p>
+                          <p className="text-[10px] text-red-700 font-bold leading-tight uppercase tracking-tight">ERROR: {sync.lastError}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-[8px] text-red-500 font-black uppercase tracking-[0.2em]">Attempt {sync.attempts}/10</p>
+                            <button 
+                              onClick={() => retrySyncItem(sync.id)}
+                              className="text-[8px] font-black text-emerald-600 uppercase tracking-widest hover:underline"
+                            >
+                              Retransmit Now
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -856,30 +924,64 @@ export default function App() {
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <div className={cn(
-                "w-2 h-2 rounded-full animate-pulse",
+                "w-2.5 h-2.5 rounded-full animate-pulse",
                 isScanning ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-natural-muted"
               )} />
-              <span className="text-[10px] font-black text-natural-muted uppercase tracking-[0.2em]">
+              <span className="text-[11px] font-black text-natural-muted uppercase tracking-[0.2em]">
                 {isScanning ? 'Scanner Active' : 'Scanner Standby'}
               </span>
             </div>
-            <button 
-              onClick={() => setQuickScanMode(!quickScanMode)}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all",
-                quickScanMode 
-                  ? "bg-natural-accent border-natural-accent text-white shadow-lg shadow-natural-accent/20" 
-                  : "bg-white border-natural-border text-natural-muted hover:border-natural-accent"
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setQuickScanMode(!quickScanMode)}
+                className={cn(
+                  "flex items-center gap-2.5 px-4 py-2 rounded-full border transition-all active:scale-95",
+                  quickScanMode 
+                    ? "bg-natural-accent border-natural-accent text-white shadow-lg shadow-natural-accent/20" 
+                    : "bg-white border-natural-border text-natural-muted hover:border-natural-accent"
+                )}
+              >
+                <div className={cn(
+                  "w-3.5 h-3.5 rounded-full flex items-center justify-center border",
+                  quickScanMode ? "bg-white border-white" : "border-natural-muted"
+                )}>
+                  {quickScanMode && <Check className="w-2.5 h-2.5 text-natural-accent" />}
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.1em]">Quick Mode</span>
+              </button>
+
+              {quickScanMode && (
+                <div className="flex bg-white rounded-full border border-natural-border p-1 shadow-sm">
+                  <button 
+                    onClick={() => setQuickScanType('IN')}
+                    className={cn(
+                      "px-3 py-1 text-[8px] font-black uppercase rounded-full transition-all",
+                      quickScanType === 'IN' ? "bg-emerald-500 text-white" : "text-natural-muted hover:text-emerald-600"
+                    )}
+                  >
+                    Put
+                  </button>
+                  <button 
+                    onClick={() => setQuickScanType('OUT')}
+                    className={cn(
+                      "px-3 py-1 text-[8px] font-black uppercase rounded-full transition-all",
+                      quickScanType === 'OUT' ? "bg-red-500 text-white" : "text-natural-muted hover:text-red-600"
+                    )}
+                  >
+                    Take
+                  </button>
+                  <button 
+                    onClick={() => setQuickScanType('AUDIT')}
+                    className={cn(
+                      "px-3 py-1 text-[8px] font-black uppercase rounded-full transition-all",
+                      quickScanType === 'AUDIT' ? "bg-blue-500 text-white" : "text-natural-muted hover:text-blue-600"
+                    )}
+                  >
+                    Audit
+                  </button>
+                </div>
               )}
-            >
-              <div className={cn(
-                "w-3 h-3 rounded-full flex items-center justify-center border",
-                quickScanMode ? "bg-white border-white" : "border-natural-muted"
-              )}>
-                {quickScanMode && <Check className="w-2 h-2 text-natural-accent" />}
-              </div>
-              <span className="text-[9px] font-black uppercase tracking-widest">Quick Scan (Qty: 1)</span>
-            </button>
+            </div>
           </div>
           <AnimatePresence mode="wait">
             {isScanning ? (
@@ -893,9 +995,9 @@ export default function App() {
                 <Scanner onScan={handleScan} isScanning={isScanning} />
                 <button
                   onClick={() => setIsScanning(false)}
-                  className="w-full py-5 bg-white/5 hover:bg-white/10 text-white font-black transition-all text-[10px] uppercase tracking-[0.3em] border-t border-white/5"
+                  className="w-full py-6 bg-white/5 hover:bg-white/10 text-white font-black transition-all text-xs uppercase tracking-[0.4em] border-t border-white/5 active:bg-red-900/40"
                 >
-                  Terminate Scan Session
+                  Terminate Session
                 </button>
               </motion.div>
             ) : (
@@ -919,9 +1021,9 @@ export default function App() {
                       <Scan className="w-12 h-12 text-natural-accent" />
                     )}
                   </div>
-                  <div className="text-center space-y-1">
-                    <span className="text-2xl font-black text-natural-text block tracking-tighter">INITIALIZE SCANNER</span>
-                    <span className="text-[10px] text-natural-muted font-bold uppercase tracking-[0.3em] opacity-60">Ready for data entry</span>
+                  <div className="text-center space-y-2">
+                    <span className="text-3xl font-black text-natural-text block tracking-tighter">START SCANNER</span>
+                    <span className="text-xs text-natural-muted font-bold uppercase tracking-[0.3em] opacity-60 px-4">Initialization Ready</span>
                   </div>
                 </button>
               </motion.div>
@@ -962,8 +1064,8 @@ export default function App() {
           <InventoryForm 
             product={scannedProduct} 
             isSubmitting={isSubmitting}
-            onSubmit={(qty) => handleSubmitEntry(qty)}
-            onBatchSubmit={(qty) => handleSubmitEntry(qty, undefined, true)}
+            onSubmit={(qty, type, remarks) => handleSubmitEntry(qty, type, remarks)}
+            onBatchSubmit={(qty, type, remarks) => handleSubmitEntry(qty, type, remarks, undefined, true)}
             onCancel={() => setScannedProduct(null)}
           />
         )}
@@ -980,8 +1082,10 @@ export default function App() {
               uom: editingEntry.uom
             }} 
             initialQuantity={editingEntry.quantity}
+            initialType={editingEntry.type}
+            initialRemarks={editingEntry.remarks}
             isSubmitting={isSubmitting}
-            onSubmit={handleUpdateEntry}
+            onSubmit={(qty, type, remarks) => handleUpdateEntry(qty, type, remarks)}
             onCancel={() => setEditingEntry(null)}
             title="Update Entry"
           />

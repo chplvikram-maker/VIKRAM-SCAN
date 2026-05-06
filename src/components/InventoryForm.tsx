@@ -1,17 +1,19 @@
 import { useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Product } from '../types';
-import { Package, Hash, Type, Ruler, CheckCircle2, X } from 'lucide-react';
+import { Package, Hash, Type, Ruler, CheckCircle2, X, ClipboardCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 
 interface InventoryFormProps {
   product: Product;
-  onSubmit: (quantity: number) => void;
-  onBatchSubmit?: (quantity: number) => void;
+  onSubmit: (quantity: number, type: 'IN' | 'OUT' | 'AUDIT', remarks?: string) => void;
+  onBatchSubmit?: (quantity: number, type: 'IN' | 'OUT' | 'AUDIT', remarks?: string) => void;
   onCancel: () => void;
   isSubmitting: boolean;
   initialQuantity?: number;
+  initialType?: 'IN' | 'OUT' | 'AUDIT';
+  initialRemarks?: string;
   title?: string;
 }
 
@@ -22,9 +24,13 @@ export default function InventoryForm({
   onCancel, 
   isSubmitting,
   initialQuantity,
+  initialType = 'IN',
+  initialRemarks = '',
   title = "Verify Entry"
 }: InventoryFormProps) {
   const [quantity, setQuantity] = useState<string>(initialQuantity ? String(initialQuantity) : '');
+  const [type, setType] = useState<'IN' | 'OUT' | 'AUDIT'>(initialType);
+  const [remarks, setRemarks] = useState<string>(initialRemarks);
 
   // Auto focus input on mount
   useEffect(() => {
@@ -52,7 +58,7 @@ export default function InventoryForm({
       return;
     }
 
-    onSubmit(val);
+    onSubmit(val, type, remarks);
   };
 
   return (
@@ -82,7 +88,7 @@ export default function InventoryForm({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="quantity-input" className="block text-[10px] font-black text-natural-muted uppercase tracking-[0.2em] ml-2">
               Physical Count (Qty)
@@ -96,45 +102,122 @@ export default function InventoryForm({
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               placeholder="0.00"
-              className="w-full text-4xl font-black p-5 bg-white rounded-2xl border-2 border-natural-accent focus:ring-4 focus:ring-natural-accent/10 outline-none transition-all text-center text-natural-accent"
+              className={cn(
+                "w-full text-5xl font-black p-6 bg-white rounded-3xl border-2 outline-none transition-all text-center",
+                type === 'IN' ? "border-emerald-500 text-emerald-500 focus:ring-emerald-500/10" : 
+                type === 'OUT' ? "border-red-500 text-red-500 focus:ring-red-500/10" :
+                "border-blue-500 text-blue-500 focus:ring-blue-500/10"
+              )}
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {onBatchSubmit && !initialQuantity && (
+          <div className="space-y-2">
+            <label htmlFor="remarks-input" className="block text-[10px] font-black text-natural-muted uppercase tracking-[0.2em] ml-2">
+              Remarks (Optional)
+            </label>
+            <textarea
+              id="remarks-input"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Add notes..."
+              rows={2}
+              className="w-full p-4 bg-white rounded-2xl border-2 border-natural-border outline-none focus:border-natural-accent transition-all text-sm font-medium resize-none"
+            />
+          </div>
+
+          <div className="pt-4 flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => {
                   const val = parseFloat(quantity);
-                  if (val > 0) onBatchSubmit(val);
-                  else toast.error('Enter valid quantity');
+                  if (!val || val <= 0) {
+                    toast.error('Enter valid quantity');
+                    return;
+                  }
+                  onSubmit(val, 'IN', remarks);
                 }}
                 disabled={isSubmitting}
-                className="py-4 rounded-2xl font-black text-sm border-2 border-natural-text text-natural-text hover:bg-natural-text hover:text-white transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+                className={cn(
+                  "py-4 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition-all uppercase tracking-widest shadow-lg",
+                  "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-95",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
               >
-                Scan Next
+                <div className="text-[10px] opacity-70">Log As</div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Put (IN)
+                </div>
               </button>
-            )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const val = parseFloat(quantity);
+                  if (!val || val <= 0) {
+                    toast.error('Enter valid quantity');
+                    return;
+                  }
+                  onSubmit(val, 'OUT', remarks);
+                }}
+                disabled={isSubmitting}
+                className={cn(
+                  "py-4 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition-all uppercase tracking-widest shadow-lg",
+                  "bg-red-600 hover:bg-red-700 text-white shadow-red-600/20 active:scale-95",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                <div className="text-[10px] opacity-70">Log As</div>
+                <div className="flex items-center gap-2">
+                  <X className="w-5 h-5" />
+                  Take (OUT)
+                </div>
+              </button>
+            </div>
+
             <button
-              type="submit"
+              type="button"
+              onClick={() => {
+                const val = parseFloat(quantity);
+                if (!val || val <= 0) {
+                  toast.error('Enter valid quantity');
+                  return;
+                }
+                onSubmit(val, 'AUDIT', remarks);
+              }}
               disabled={isSubmitting}
               className={cn(
-                "py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all uppercase tracking-widest flex-1",
-                "bg-natural-accent hover:bg-natural-text text-white shadow-lg shadow-natural-accent/20",
-                "disabled:opacity-50 disabled:cursor-not-allowed",
-                (!onBatchSubmit || initialQuantity) && "col-span-full py-5"
+                "w-full py-4 rounded-2xl font-black text-sm flex flex-col items-center justify-center gap-1 transition-all uppercase tracking-widest shadow-lg",
+                "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 active:scale-95",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
             >
-              {isSubmitting ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <CheckCircle2 className="w-5 h-5" />
-                  {initialQuantity ? 'Update' : 'Submit'}
-                </>
-              )}
+              <div className="text-[10px] opacity-70">Set Absolute Count</div>
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="w-5 h-5" />
+                Stock Take (AUDIT)
+              </div>
             </button>
           </div>
+
+          {onBatchSubmit && !initialQuantity && (
+            <button
+              type="button"
+              onClick={() => {
+                const val = parseFloat(quantity);
+                if (!val || val <= 0) {
+                  toast.error('Enter valid quantity');
+                  return;
+                }
+                onBatchSubmit(val, type, remarks);
+              }}
+              disabled={isSubmitting}
+              className="w-full py-4 mt-2 rounded-2xl font-black text-xs border-2 border-natural-text text-natural-text hover:bg-natural-text hover:text-white transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-2"
+            >
+              Scan Continuous
+            </button>
+          )}
         </form>
       </div>
     </motion.div>

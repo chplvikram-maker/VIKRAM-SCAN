@@ -65,7 +65,18 @@ export default function Scanner({ onScan, isScanning }: ScannerProps) {
           if (isMounted) setError(null);
         } catch (err) {
           console.error('Failed to start scanner:', err);
-          if (isMounted) setError('Could not access camera. Check permissions.');
+          if (isMounted) {
+            const errorMessage = String(err).toLowerCase();
+            if (errorMessage.includes('notallowederror') || errorMessage.includes('permission denied')) {
+              setError('Camera access denied. Please enable permissions in your browser settings to use the scanner.');
+            } else if (errorMessage.includes('notfounderror') || errorMessage.includes('no camera found')) {
+              setError('No camera detected. Please ensure your device has a working camera connected.');
+            } else if (errorMessage.includes('notreadableerror') || errorMessage.includes('could not start video source')) {
+              setError('Camera is currently unavailable. It might be in use by another app or there is a hardware issue.');
+            } else {
+              setError('Failed to initialize camera. Please check your hardware or try refreshing the page.');
+            }
+          }
         }
       };
 
@@ -95,6 +106,11 @@ export default function Scanner({ onScan, isScanning }: ScannerProps) {
       }
     };
   }, [isScanning, onScan]);
+
+  const handleRetry = () => {
+    setError(null);
+    // Setting error to null should trigger the useEffect again if isScanning is true
+  };
 
   return (
     <div className="relative w-full aspect-square bg-black overflow-hidden group">
@@ -147,13 +163,26 @@ export default function Scanner({ onScan, isScanning }: ScannerProps) {
       </div>
 
       {error && (
-        <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center p-8 text-center space-y-4 z-30">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-            <AlertCircle className="w-8 h-8 text-red-600" />
+        <div className="absolute inset-0 bg-zinc-900 flex flex-col items-center justify-center p-8 text-center z-30">
+          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+            <AlertCircle className="w-8 h-8 text-red-500" />
           </div>
-          <div className="space-y-1">
-            <h3 className="font-bold text-white uppercase tracking-wider text-sm">Scanner Error</h3>
-            <p className="text-zinc-500 text-xs">{error}</p>
+          <div className="max-w-xs space-y-4">
+            <div className="space-y-2">
+              <h3 className="font-black text-white uppercase tracking-[0.2em] text-sm">Scanner Error</h3>
+              <p className="text-white/50 text-[11px] leading-relaxed font-medium">
+                {error}
+              </p>
+            </div>
+            <button 
+              onClick={handleRetry}
+              className="w-full py-4 bg-white text-black font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-zinc-200 transition-colors"
+            >
+              Retry Access
+            </button>
+            <p className="text-[9px] text-white/20 uppercase tracking-widest font-black">
+              Check browser permissions
+            </p>
           </div>
         </div>
       )}
